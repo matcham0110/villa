@@ -26,7 +26,26 @@ if(NOT DEFINED VC_READER_ENABLE_CUDA OR VC_READER_ENABLE_CUDA)
 endif()
 set(_vc_reader_cuda_default OFF)
 if(CMAKE_CUDA_COMPILER)
-    set(_vc_reader_cuda_default ON)
+    # A toolkit can be found and still be too old for the CUDA backends: they reach
+    # libcu++ through CUB (::cuda::std::plus), which nvcc 12.0, the version Ubuntu 24.04
+    # packages, does not have. Turn the backends on by default only when this toolkit
+    # compiles that call. An explicit -DVC_READER_ENABLE_CUDA=ON is not second-guessed.
+    if(DEFINED VC_READER_ENABLE_CUDA)
+        set(_vc_reader_cuda_default ON)
+    else()
+        enable_language(CUDA)
+        include(CheckSourceCompiles)
+        check_source_compiles(CUDA "
+#include <cub/device/device_scan.cuh>
+int main() { return ::cuda::std::plus<int>{}(0, 0); }
+" VC_READER_CUDA_TOOLKIT_BUILDS_BACKENDS)
+        if(VC_READER_CUDA_TOOLKIT_BUILDS_BACKENDS)
+            set(_vc_reader_cuda_default ON)
+        else()
+            message(STATUS "vc_reader: CUDA ${CMAKE_CUDA_COMPILER_VERSION} (${CMAKE_CUDA_COMPILER}) is too old "
+                "for the CUDA backends; building without them. -DVC_READER_ENABLE_CUDA=ON forces them.")
+        endif()
+    endif()
 endif()
 option(VC_READER_ENABLE_CUDA "Build optional CUDA reader and transform backends"
     ${_vc_reader_cuda_default})
